@@ -1,0 +1,474 @@
+# PlayTab: this ONE file contains the whole app and builds the APK in the cloud.
+name: Build PlayTab APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create settings.gradle.kts
+        run: |
+          mkdir -p "$(dirname 'settings.gradle.kts')"
+          cat > 'settings.gradle.kts' <<'PLAYTAB_EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+
+          rootProject.name = "PlayTab"
+          include(":app")
+          PLAYTAB_EOF
+
+      - name: Create build.gradle.kts
+        run: |
+          mkdir -p "$(dirname 'build.gradle.kts')"
+          cat > 'build.gradle.kts' <<'PLAYTAB_EOF'
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          PLAYTAB_EOF
+
+      - name: Create gradle.properties
+        run: |
+          mkdir -p "$(dirname 'gradle.properties')"
+          cat > 'gradle.properties' <<'PLAYTAB_EOF'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          android.nonTransitiveRClass=true
+          PLAYTAB_EOF
+
+      - name: Create app/build.gradle.kts
+        run: |
+          mkdir -p "$(dirname 'app/build.gradle.kts')"
+          cat > 'app/build.gradle.kts' <<'PLAYTAB_EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+
+          android {
+              namespace = "com.example.offlineplayer"
+              compileSdk = 34
+
+              defaultConfig {
+                  applicationId = "com.playtab.app"
+                  minSdk = 24
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+              buildFeatures {
+                  viewBinding = true
+              }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.appcompat:appcompat:1.7.0")
+              implementation("com.google.android.material:material:1.12.0")
+              implementation("androidx.recyclerview:recyclerview:1.3.2")
+              implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+
+              val media3 = "1.4.1"
+              implementation("androidx.media3:media3-exoplayer:$media3")
+              implementation("androidx.media3:media3-ui:$media3")
+              implementation("androidx.media3:media3-session:$media3")
+          }
+          PLAYTAB_EOF
+
+      - name: Create app/src/main/AndroidManifest.xml
+        run: |
+          mkdir -p "$(dirname 'app/src/main/AndroidManifest.xml')"
+          cat > 'app/src/main/AndroidManifest.xml' <<'PLAYTAB_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <!-- Offline by design: there is NO android.permission.INTERNET here. -->
+              <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+              <uses-permission
+                  android:name="android.permission.READ_EXTERNAL_STORAGE"
+                  android:maxSdkVersion="32" />
+
+              <application
+                  android:allowBackup="false"
+                  android:icon="@drawable/ic_playtab"
+                  android:label="PlayTab"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.OfflinePlayer">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <activity
+                      android:name=".PlayerActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
+                      android:supportsPictureInPicture="true"
+                      android:theme="@style/Theme.OfflinePlayer.Player">
+                      <intent-filter>
+                          <action android:name="android.intent.action.VIEW" />
+                          <category android:name="android.intent.category.DEFAULT" />
+                          <category android:name="android.intent.category.BROWSABLE" />
+                          <data android:scheme="content" />
+                          <data android:scheme="file" />
+                          <data android:mimeType="video/*" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          PLAYTAB_EOF
+
+      - name: Create app/src/main/res/values/themes.xml
+        run: |
+          mkdir -p "$(dirname 'app/src/main/res/values/themes.xml')"
+          cat > 'app/src/main/res/values/themes.xml' <<'PLAYTAB_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="Theme.OfflinePlayer" parent="Theme.Material3.DayNight.NoActionBar" />
+
+              <style name="Theme.OfflinePlayer.Player" parent="Theme.Material3.Dark.NoActionBar">
+                  <item name="android:windowBackground">@android:color/black</item>
+                  <item name="android:windowFullscreen">true</item>
+              </style>
+          </resources>
+          PLAYTAB_EOF
+
+      - name: Create app/src/main/res/drawable/ic_playtab.xml
+        run: |
+          mkdir -p "$(dirname 'app/src/main/res/drawable/ic_playtab.xml')"
+          cat > 'app/src/main/res/drawable/ic_playtab.xml' <<'PLAYTAB_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <!-- Rounded dark tile -->
+              <path
+                  android:fillColor="#0E0F13"
+                  android:pathData="M24,0 H84 A24,24 0 0 1 108,24 V84 A24,24 0 0 1 84,108 H24 A24,24 0 0 1 0,84 V24 A24,24 0 0 1 24,0 Z" />
+              <!-- Play triangle -->
+              <path
+                  android:fillColor="#4F8CFF"
+                  android:pathData="M42,32 L42,76 L80,54 Z" />
+          </vector>
+          PLAYTAB_EOF
+
+      - name: Create app/src/main/res/layout/activity_main.xml
+        run: |
+          mkdir -p "$(dirname 'app/src/main/res/layout/activity_main.xml')"
+          cat > 'app/src/main/res/layout/activity_main.xml' <<'PLAYTAB_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:app="http://schemas.android.com/apk/res-auto"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:orientation="vertical">
+
+              <com.google.android.material.appbar.MaterialToolbar
+                  android:id="@+id/toolbar"
+                  android:layout_width="match_parent"
+                  android:layout_height="?attr/actionBarSize"
+                  app:title="PlayTab" />
+
+              <FrameLayout
+                  android:layout_width="match_parent"
+                  android:layout_height="0dp"
+                  android:layout_weight="1">
+
+                  <androidx.recyclerview.widget.RecyclerView
+                      android:id="@+id/list"
+                      android:layout_width="match_parent"
+                      android:layout_height="match_parent" />
+
+                  <TextView
+                      android:id="@+id/empty"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_gravity="center"
+                      android:text="No videos found on this device"
+                      android:visibility="gone" />
+
+                  <LinearLayout
+                      android:id="@+id/permissionGroup"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:layout_gravity="center"
+                      android:gravity="center"
+                      android:orientation="vertical"
+                      android:padding="24dp"
+                      android:visibility="gone">
+
+                      <TextView
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:gravity="center"
+                          android:text="Allow access to your videos to see them here. Nothing ever leaves your phone." />
+
+                      <Button
+                          android:id="@+id/grantButton"
+                          android:layout_width="wrap_content"
+                          android:layout_height="wrap_content"
+                          android:layout_marginTop="16dp"
+                          android:text="Allow access" />
+                  </LinearLayout>
+              </FrameLayout>
+          </LinearLayout>
+          PLAYTAB_EOF
+
+      - name: Create app/src/main/res/layout/activity_player.xml
+        run: |
+          mkdir -p "$(dirname 'app/src/main/res/layout/activity_player.xml')"
+          cat > 'app/src/main/res/layout/activity_player.xml' <<'PLAYTAB_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:background="@android:color/black">
+
+              <androidx.media3.ui.PlayerView
+                  android:id="@+id/playerView"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"
+                  android:keepScreenOn="true"
+                  app:resize_mode="fit"
+                  app:show_buffering="when_playing"
+                  xmlns:app="http://schemas.android.com/apk/res-auto" />
+
+              <!-- Transparent layer that catches gestures above the player -->
+              <View
+                  android:id="@+id/gestureLayer"
+                  android:layout_width="match_parent"
+                  android:layout_height="match_parent"
+                  android:layout_marginTop="56dp"
+                  android:layout_marginBottom="96dp" />
+
+              <TextView
+                  android:id="@+id/hud"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:layout_gravity="center"
+                  android:background="#99000000"
+                  android:paddingHorizontal="20dp"
+                  android:paddingVertical="10dp"
+                  android:textColor="@android:color/white"
+                  android:textSize="22sp"
+                  android:visibility="gone" />
+
+              <LinearLayout
+                  android:id="@+id/topBar"
+                  android:layout_width="match_parent"
+                  android:layout_height="56dp"
+                  android:background="#66000000"
+                  android:gravity="center_vertical"
+                  android:orientation="horizontal"
+                  android:paddingHorizontal="12dp">
+
+                  <TextView
+                      android:id="@+id/titleText"
+                      android:layout_width="0dp"
+                      android:layout_height="wrap_content"
+                      android:layout_weight="1"
+                      android:ellipsize="end"
+                      android:maxLines="1"
+                      android:textColor="@android:color/white"
+                      android:textSize="16sp" />
+
+                  <Button
+                      android:id="@+id/speedButton"
+                      style="@style/Widget.Material3.Button.TextButton"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:text="1x"
+                      android:textColor="@android:color/white" />
+
+                  <Button
+                      android:id="@+id/audioButton"
+                      style="@style/Widget.Material3.Button.TextButton"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:text="Audio"
+                      android:textColor="@android:color/white" />
+
+                  <Button
+                      android:id="@+id/subsButton"
+                      style="@style/Widget.Material3.Button.TextButton"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:text="Subs"
+                      android:textColor="@android:color/white" />
+
+                  <Button
+                      android:id="@+id/pipButton"
+                      style="@style/Widget.Material3.Button.TextButton"
+                      android:layout_width="wrap_content"
+                      android:layout_height="wrap_content"
+                      android:text="PiP"
+                      android:textColor="@android:color/white" />
+              </LinearLayout>
+          </FrameLayout>
+          PLAYTAB_EOF
+
+      - name: Create app/src/main/res/layout/row_item.xml
+        run: |
+          mkdir -p "$(dirname 'app/src/main/res/layout/row_item.xml')"
+          cat > 'app/src/main/res/layout/row_item.xml' <<'PLAYTAB_EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"
+              android:background="?attr/selectableItemBackground"
+              android:gravity="center_vertical"
+              android:orientation="horizontal"
+              android:padding="12dp">
+
+              <ImageView
+                  android:id="@+id/thumb"
+                  android:layout_width="96dp"
+                  android:layout_height="64dp"
+                  android:background="#22888888"
+                  android:scaleType="centerCrop" />
+
+              <LinearLayout
+                  android:layout_width="0dp"
+                  android:layout_height="wrap_content"
+                  android:layout_marginStart="12dp"
+                  android:layout_weight="1"
+                  android:orientation="vertical">
+
+                  <TextView
+                      android:id="@+id/title"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:ellipsize="end"
+                      android:maxLines="2"
+                      android:textSize="16sp"
+                      android:textStyle="bold" />
+
+                  <TextView
+                      android:id="@+id/subtitle"
+                      android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:layout_marginTop="4dp"
+                      android:alpha="0.7"
+                      android:textSize="13sp" />
+              </LinearLayout>
+          </LinearLayout>
+          PLAYTAB_EOF
+
+      - name: Create app/src/main/java/com/example/offlineplayer/VideoRepository.kt
+        run: |
+          mkdir -p "$(dirname 'app/src/main/java/com/example/offlineplayer/VideoRepository.kt')"
+          cat > 'app/src/main/java/com/example/offlineplayer/VideoRepository.kt' <<'PLAYTAB_EOF'
+          package com.example.offlineplayer
+
+          import android.content.ContentUris
+          import android.content.Context
+          import android.net.Uri
+          import android.provider.MediaStore
+
+          data class VideoItem(
+              val id: Long,
+              val uri: Uri,
+              val title: String,
+              val folder: String,
+              val durationMs: Long,
+              val sizeBytes: Long
+          )
+
+          data class FolderItem(val name: String, val count: Int)
+
+          object VideoRepository {
+
+              /** Reads every video from the device's MediaStore. Works fully offline. */
+              fun loadAll(context: Context): List<VideoItem> {
+                  val result = mutableListOf<VideoItem>()
+                  val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                  val projection = arrayOf(
+                      MediaStore.Video.Media._ID,
+                      MediaStore.Video.Media.DISPLAY_NAME,
+                      MediaStore.Video.Media.BUCKET_DISPLAY_NAME,
+                      MediaStore.Video.Media.DURATION,
+                      MediaStore.Video.Media.SIZE
+                  )
+                  val sort = "${MediaStore.Video.Media.DATE_ADDED} DESC"
+
+                  context.contentResolver.query(collection, projection, null, null, sort)?.use { c ->
+                      val idCol = c.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                      val nameCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                      val folderCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
+                      val durCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+                      val sizeCol = c.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
+                      while (c.moveToNext()) {
+                          val id = c.getLong(idCol)
+                          result += VideoItem(
+                              id = id,
+                              uri = ContentUris.withAppendedId(collection, id),
+                              title = c.getString(nameCol) ?: "Unknown",
+                              folder = c.getString(folderCol) ?: "Unknown",
+                              durationMs = c.getLong(durCol),
+                              sizeBytes = c.getLong(sizeCol)
+                          )
+                      }
+                  }
+                  return result
+              }
+
+              fun folders(videos: List<VideoItem>): List<FolderItem> =
+                  videos.groupBy { it.folder }
+                      .map { (name, list) -> FolderItem(name, list.size) }
+                      .sortedBy { it.name.lowercase() }
+          }
+
+          fun formatDuration(ms: Long): String {
+              val totalSec = ms / 1000
+              val h = totalSec / 3600
+              val m = (totalSec % 3600) / 60
+              val s = totalSec % 60
+              return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+          }
+
+          fun formatSize(bytes: Long): String = when {
+              bytes >= 1L shl 30 -> "%.1f GB".format(bytes / (1L shl 30).toDouble())
+              bytes >= 1
